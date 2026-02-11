@@ -30,9 +30,9 @@ CANADA/CHINA/JAPAN/SOUTH AFRICA/NEW ZEALAND (life+50 countries):
 - Composer died 50+ years ago = public domain.
 
 WHEN TO USE EACH VERDICT:
-- YES: if PD everywhere (or virtually everywhere).
+- YES: if PD everywhere (or virtually everywhere) as of today, even if the path to get there was complex or recent.
 - NO: if not PD anywhere.
-- IT DEPENDS: if PD in some countries but not others. Explain which.
+- IT DEPENDS: if PD in some countries but NOT others RIGHT NOW. Only use this if the work is currently still under copyright somewhere significant.
 
 Arrangements and editions have their OWN separate copyright independent of the original composition.
 Today's date is February 2026.
