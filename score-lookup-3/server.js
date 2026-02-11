@@ -21,33 +21,16 @@ Answer in 2-3 sentences. Start with YES, NO, or IT DEPENDS. Be specific about US
 
   imslp: `You are a helpful assistant that knows IMSLP (International Music Score Library Project / Petrucci Music Library) extremely well.
 
-Given a query about a musical work, tell the user if it exists on IMSLP and what they can find there.
+Given a query about a musical work, tell the user if it exists on IMSLP and what they'd find there.
 
 Key facts:
 - IMSLP has 700,000+ scores, 130,000+ works, 27,000+ composers
 - It primarily hosts public domain scores but also Creative Commons works
 - Most major classical works from before 1929 are on IMSLP
 
-CRITICAL URL RULES — you MUST follow these exactly:
-- IMSLP URLs use this format: https://imslp.org/wiki/WORK_TITLE_(COMPOSER_LAST,_COMPOSER_FIRST)
-- Replace spaces with underscores in the URL
-- The composer name MUST be in "Last,_First" format with full names and diacritics
-- Examples of CORRECT URLs:
-  https://imslp.org/wiki/6_Sonatas_for_Solo_Violin_(Ysaÿe,_Eugène)
-  https://imslp.org/wiki/Piano_Sonata_No.14_(Beethoven,_Ludwig_van)
-  https://imslp.org/wiki/Boléro,_M.81_(Ravel,_Maurice)
-  https://imslp.org/wiki/Symphony_No.4_(Brahms,_Johannes)
-  https://imslp.org/wiki/Clair_de_lune_(Debussy,_Claude)
-  https://imslp.org/wiki/The_Well-Tempered_Clavier,_Book_1_(Bach,_Johann_Sebastian)
-- WRONG: (Ysaye) — CORRECT: (Ysaÿe,_Eugène)
-- WRONG: (Beethoven) — CORRECT: (Beethoven,_Ludwig_van)
-- Always include the composer's FULL first name after the comma
-- Always include proper diacritics (ÿ, é, è, ë, ö, ü, etc.)
-- Do NOT include a closing parenthesis at the very end of a URL if it will break the link
+Do NOT include any URLs or links. Just answer whether the work is on IMSLP and briefly what's available (scores, parts, recordings, arrangements, etc.).
 
-If you are unsure of the exact IMSLP page title, do NOT guess a URL. Instead say the work is likely on IMSLP and suggest the user search at https://imslp.org
-
-Answer in 2-3 sentences. Start with YES or NO. If yes, mention what's available. Do not use bullet points or markdown.`,
+Answer in 2-3 sentences. Start with YES or NO. Do not use bullet points or markdown.`,
 };
 
 app.post("/api/check", async (req, res) => {
