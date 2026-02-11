@@ -160,9 +160,13 @@
 </div>
 
 <script>
-// Turn URLs in text into clickable links
+// Turn URLs in text into clickable links (handles parentheses in IMSLP URLs)
 function linkify(text) {
-  return text.replace(/(https?:\/\/[^\s),]+)/g, '<a href="$1" target="_blank">$1</a>');
+  return text.replace(/(https?:\/\/[^\s,]+?)(?=[,.]?(?:\s|$))/g, function(url) {
+    // Clean trailing punctuation but keep parentheses that are part of the URL
+    var clean = url.replace(/[.,;:!?]+$/, '');
+    return '<a href="' + clean + '" target="_blank">' + clean + '</a>';
+  });
 }
 
 function esc(str) {
