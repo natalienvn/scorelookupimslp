@@ -23,7 +23,7 @@ Rules — FOLLOW THESE EXACTLY:
 US COPYRIGHT (different from the rest of the world):
 - The US does NOT use life+70 for older works. The US uses publication-based rules.
 - Works published before 1929: public domain in the US.
-- Works published 1929-1977: protected for 95 years from publication date. (e.g. published 1929 → PD on Jan 1, 2025. Published 1939 → PD on Jan 1, 2035.)
+- Works published 1929-1977: protected for 95 years from publication date.
 - Works published after 1977: life of author + 70 years.
 - NEVER group the US with "life+70 countries" — the US rule is DIFFERENT.
 
@@ -33,21 +33,20 @@ EU/UK/AUSTRALIA (life+70 countries):
 CANADA/CHINA/JAPAN/SOUTH AFRICA/NEW ZEALAND (life+50 countries):
 - Composer died 50+ years ago = public domain.
 
-WHEN TO USE EACH VERDICT:
-- YES: if PD everywhere (or virtually everywhere) as of today.
-- NO: if not PD anywhere right now.
-- IT DEPENDS: if PD in some countries but NOT others RIGHT NOW.
-
 Arrangements and editions have their OWN separate copyright.
 
-TODAY IS ${dateStr}. The current year is ${year}. Any date before today HAS ALREADY PASSED. For example, January 1, 2025 is in the past. Do your date math carefully: if a work enters PD on a date that is before ${dateStr}, it IS public domain now.
+TODAY IS ${dateStr}. The current year is ${year}. Any date before today HAS ALREADY PASSED.
 
-CRITICAL INSTRUCTIONS:
-- Give ONE confident, correct answer. NEVER change your mind mid-response. NEVER say "wait" or correct yourself.
-- Think carefully BEFORE you write. Do all date calculations silently. Only output your final answer.
-- Start with exactly one of: YES, NO, or IT DEPENDS.
-- Answer in 2-4 sentences. Be specific about which countries and dates.
-- Do not use bullet points, markdown, or links.`,
+RESPONSE FORMAT — follow this EXACTLY:
+1. First, write 2-3 sentences explaining the copyright status in different countries/regions. Be specific about dates.
+2. End with a FINAL VERDICT on its own line, chosen from: VERDICT: YES / VERDICT: NO / VERDICT: IT DEPENDS
+3. Choose the verdict based on your COMPLETE analysis:
+   - VERDICT: YES if your analysis shows it's PD everywhere now
+   - VERDICT: NO if it's not PD anywhere now
+   - VERDICT: IT DEPENDS if it's PD in some countries but not others right now
+
+CRITICAL: NEVER change your mind mid-response. NEVER say "wait". Do all calculations silently before writing.
+Do not use bullet points, markdown, or links.`,
     },
     imslp: {
       model: "claude-haiku-4-5-20251001",
@@ -114,7 +113,18 @@ app.post("/api/check", async (req, res) => {
       .join(" ")
       .trim();
 
-    res.json({ result: text || "No answer returned. Try rephrasing your query." });
+    // For PD mode: extract VERDICT from end, move to front
+    let result = text;
+    if (mode === "pd") {
+      const verdictMatch = text.match(/VERDICT:\s*(YES|NO|IT DEPENDS)\.?$/i);
+      if (verdictMatch) {
+        const verdict = verdictMatch[1].toUpperCase();
+        const explanation = text.replace(/\s*VERDICT:\s*(YES|NO|IT DEPENDS)\.?\s*$/i, "").trim();
+        result = verdict + ". " + explanation;
+      }
+    }
+
+    res.json({ result: result || "No answer returned. Try rephrasing your query." });
   } catch (err) {
     console.error("[Server Error]", err);
     res.status(500).json({ error: "Failed to reach the AI service. Please try again." });
