@@ -37,8 +37,11 @@ Key facts:
 - It primarily hosts public domain scores but also Creative Commons works
 - Most major classical works from before 1929 are on IMSLP
 - Many copyrighted works also appear with legally available editions
+- Works by composers who died less than 70 years ago may still be under copyright
 
 Do NOT include any URLs or links. Just answer whether the work is on IMSLP and briefly what's available (scores, parts, recordings, arrangements, etc.).
+
+IMPORTANT: If the composer died LESS than 70 years ago (e.g. Shostakovich, Prokofiev, Bartók, Britten, Copland, Barber, Bernstein, etc.), add a short note at the end: "Note: this work may still be under copyright in many countries — check the licensing on each file before downloading."
 
 CRITICAL: Give ONE confident answer. Never change your mind mid-response. Never say "wait" or correct yourself.
 Answer in 2-3 sentences. Start with YES or NO. Do not use bullet points or markdown.`,
