@@ -8,210 +8,43 @@ const API_KEY = process.env.ANTHROPIC_API_KEY;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ── IMSLP MediaWiki API ─────────────────────────────────────────────────────
+const SYSTEM_PROMPTS = {
+  pd: `You are a concise copyright expert for classical music. Given a composer, work, or edition, determine if it's in the public domain.
 
-const IMSLP_API = "https://imslp.org/w/api.php";
+Rules you know:
+- US: works published before 1929 are public domain. Works published 1929+ with expired copyright (95 years from publication) may also be PD.
+- International: if the composer died 70+ years ago, original compositions are PD in most countries (life+70). Some countries use life+50.
+- Arrangements and editions have their OWN copyright separate from the underlying composition.
+- Ravel died 1937 — his works entered PD in the US on Jan 1, 2025 (95 years from 1929 publications). In EU, PD since 2008 (life+70).
 
-async function imslpSearch(query, limit = 5) {
-  const url = new URL(IMSLP_API);
-  url.searchParams.set("action", "query");
-  url.searchParams.set("list", "search");
-  url.searchParams.set("srsearch", query);
-  url.searchParams.set("srlimit", String(limit));
-  url.searchParams.set("format", "json");
+Answer in 2-3 sentences. Start with YES, NO, or IT DEPENDS. Be specific about US vs international when relevant. Do not use bullet points or markdown.`,
 
-  console.log("[IMSLP Search]", query);
+  imslp: `You are a helpful assistant that knows IMSLP (International Music Score Library Project / Petrucci Music Library) extremely well.
 
-  const res = await fetch(url.toString(), {
-    headers: {
-      "User-Agent": "ScoreLookup/2.1 (IMSLP public domain checker)",
-      "Accept": "application/json",
-    },
-  });
+Given a query about a musical work, tell the user if it exists on IMSLP and what they can find there. You have extensive knowledge of IMSLP's catalog.
 
-  if (!res.ok) {
-    console.error("[IMSLP Error]", res.status, res.statusText);
-    throw new Error(`IMSLP API returned ${res.status}`);
-  }
+Key facts:
+- IMSLP has 700,000+ scores, 130,000+ works, 27,000+ composers
+- It primarily hosts public domain scores but also Creative Commons works
+- Works are titled like: "Piano Sonata No.14 (Beethoven, Ludwig van)" or "Boléro, M.81 (Ravel, Maurice)"
+- Most major classical works from before 1929 are on IMSLP
+- Provide the likely IMSLP URL when possible: https://imslp.org/wiki/TITLE_(COMPOSER)
 
-  const data = await res.json();
-  return (data.query?.search || []).map((item) => ({
-    title: item.title,
-    snippet: item.snippet
-      .replace(/<[^>]*>/g, "")
-      .replace(/&quot;/g, '"')
-      .replace(/&amp;/g, "&")
-      .replace(/&#039;/g, "'"),
-    link: `https://imslp.org/wiki/${encodeURIComponent(item.title.replace(/ /g, "_"))}`,
-  }));
-}
+Answer in 2-3 sentences. Start with YES or NO. If yes, mention what's likely available. Do not use bullet points or markdown.`,
+};
 
-async function imslpGetPage(title) {
-  const url = new URL(IMSLP_API);
-  url.searchParams.set("action", "parse");
-  url.searchParams.set("page", title);
-  url.searchParams.set("prop", "wikitext");
-  url.searchParams.set("format", "json");
-
-  const res = await fetch(url.toString(), {
-    headers: {
-      "User-Agent": "ScoreLookup/2.1 (IMSLP public domain checker)",
-      "Accept": "application/json",
-    },
-  });
-
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data.parse?.wikitext?.["*"] || null;
-}
-
-// ── Copyright parsing ───────────────────────────────────────────────────────
-
-function parseCopyrightFromWikitext(wikitext) {
-  if (!wikitext) return { statuses: [], composerDates: null };
-
-  const statuses = [];
-  const copyrightMatches = wikitext.match(/\|Copyright\s*=\s*([^\n|}]+)/gi);
-  if (copyrightMatches) {
-    for (const m of copyrightMatches) {
-      const val = m.replace(/\|Copyright\s*=\s*/i, "").trim();
-      if (val && !statuses.includes(val)) statuses.push(val);
-    }
-  }
-
-  let composerDates = null;
-  const deathMatch = wikitext.match(/\|Death\s*=\s*(\d{4})/i);
-  const birthMatch = wikitext.match(/\|Born\s*=\s*(\d{4})/i);
-  if (deathMatch) {
-    composerDates = {
-      birth: birthMatch ? parseInt(birthMatch[1]) : null,
-      death: parseInt(deathMatch[1]),
-    };
-  }
-  if (!composerDates) {
-    const dateMatch = wikitext.match(/\((\d{4})\s*[-–]\s*(\d{4})\)/);
-    if (dateMatch) {
-      composerDates = { birth: parseInt(dateMatch[1]), death: parseInt(dateMatch[2]) };
-    }
-  }
-
-  return { statuses, composerDates };
-}
-
-function analyzeCopyright(statuses, composerDates) {
-  const currentYear = new Date().getFullYear();
-  const details = [];
-  let verdict = "UNKNOWN";
-
-  const hasPD = statuses.some((s) => /public\s*domain/i.test(s));
-  const hasNonPD = statuses.some((s) => /non.*public\s*domain|copyrighted/i.test(s));
-  const hasCC = statuses.some((s) => /creative\s*commons/i.test(s));
-
-  if (hasPD && !hasNonPD) {
-    verdict = "YES";
-    details.push("Tagged as Public Domain on IMSLP.");
-  } else if (hasPD && hasNonPD) {
-    verdict = "PARTIALLY";
-    details.push("Some editions are Public Domain, others remain under copyright.");
-  } else if (hasCC) {
-    verdict = "OPEN LICENSE";
-    details.push("Available under a Creative Commons license.");
-  } else if (hasNonPD) {
-    verdict = "NO";
-    details.push("Tagged as copyrighted on IMSLP.");
-  }
-
-  if (composerDates && composerDates.death) {
-    const yearsSinceDeath = currentYear - composerDates.death;
-    const dates = composerDates.birth
-      ? `(${composerDates.birth}–${composerDates.death})`
-      : `(d. ${composerDates.death})`;
-
-    if (yearsSinceDeath > 70) {
-      details.push(`Composer ${dates} died over 70 years ago — original works are public domain in most countries.`);
-      if (verdict === "UNKNOWN") verdict = "LIKELY YES";
-    } else if (yearsSinceDeath > 50) {
-      details.push(`Composer ${dates} died ${yearsSinceDeath} years ago — PD in life+50 countries but NOT in life+70 countries (US, EU).`);
-      if (verdict === "UNKNOWN") verdict = "DEPENDS ON COUNTRY";
-    } else {
-      details.push(`Composer ${dates} died only ${yearsSinceDeath} years ago — likely still under copyright.`);
-      if (verdict === "UNKNOWN") verdict = "LIKELY NO";
-    }
-  }
-
-  if (verdict === "UNKNOWN") {
-    details.push("Could not determine copyright status. Check the IMSLP page directly.");
-  }
-
-  details.push("Note: Specific editions and arrangements may have separate copyright.");
-  return { verdict, details };
-}
-
-// ── Local query expansion (free, always works) ──────────────────────────────
-
-function localExpand(query) {
-  const q = query.trim();
-  const variations = new Set();
-  variations.add(q);
-
-  // Normalize "op." / "opus" — e.g. "Beethoven op. 90" → "Beethoven Op. 90"
-  if (/\bop\.?\s*\d/i.test(q)) {
-    variations.add(q.replace(/\bop\.?\s*/i, "Op. "));
-    variations.add(q.replace(/\bop\.?\s*/i, "Opus "));
-  }
-
-  // Normalize "no."
-  if (/\bno\.?\s*\d/i.test(q)) {
-    variations.add(q.replace(/\bno\.?\s*/i, "No. "));
-    variations.add(q.replace(/\bno\.?\s*/i, "No."));
-  }
-
-  // Try just the composer name (first word if multi-word)
-  const words = q.split(/\s+/);
-  if (words.length >= 2) {
-    variations.add(words[0]);
-  }
-
-  // Try swapping number formats: "6 sonata" → "Sonata No. 6"
-  const numMatch = q.match(/\b(\d+)\b/);
-  if (numMatch) {
-    const num = numMatch[1];
-    const types = ["Sonata", "Symphony", "Concerto", "Quartet", "Trio", "Suite",
-      "Prelude", "Etude", "Nocturne", "Ballade", "Waltz", "Mazurka", "Polonaise",
-      "Rhapsody", "Fantasia", "Fugue", "Overture", "Serenade", "Impromptu", "Scherzo"];
-
-    // Check if the query already contains a work type
-    const foundType = types.find((t) => q.toLowerCase().includes(t.toLowerCase()));
-    if (foundType) {
-      // "ysaye 6 sonata" → "Sonata No. 6 Ysaÿe"
-      const composerPart = q.replace(/\d+/g, "").replace(new RegExp(foundType, "i"), "").trim();
-      variations.add(`${foundType} No. ${num} ${composerPart}`);
-      variations.add(`${composerPart} ${foundType} No. ${num}`);
-      variations.add(`${composerPart} ${foundType}`);
-    } else {
-      // No work type found — try common ones
-      const composer = words.find((w) => !/^\d+$/.test(w)) || words[0];
-      variations.add(`${composer} Sonata No. ${num}`);
-      variations.add(`${composer} Symphony No. ${num}`);
-      variations.add(`${composer} Concerto No. ${num}`);
-    }
-  }
-
-  return [...variations];
-}
-
-// ── Haiku call for smart expansion ──────────────────────────────────────────
-
-async function haikuExpand(userQuery) {
+app.post("/api/check", async (req, res) => {
   if (!API_KEY) {
-    console.log("[Haiku] No API key — skipping");
-    return [];
+    return res.status(500).json({ error: "ANTHROPIC_API_KEY is not configured." });
+  }
+
+  const { query, mode } = req.body;
+  if (!query || !mode || !SYSTEM_PROMPTS[mode]) {
+    return res.status(400).json({ error: "Invalid request." });
   }
 
   try {
-    console.log("[Haiku] Expanding:", userQuery);
-
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -220,130 +53,37 @@ async function haikuExpand(userQuery) {
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 250,
-        system: `Generate IMSLP search queries. IMSLP titles look like: "Piano Sonata No.27 (Beethoven, Ludwig van)" or "Boléro, M.81 (Ravel, Maurice)".
-
-Given user input, return a JSON array of 5 search strings. Include the formal IMSLP-style title, opus/catalog numbers, and the composer's full name in "Last, First" format.
-
-ONLY output a JSON array. No markdown, no backticks, no explanation.`,
-        messages: [{ role: "user", content: userQuery }],
+        max_tokens: 400,
+        system: SYSTEM_PROMPTS[mode],
+        messages: [{ role: "user", content: query }],
       }),
     });
 
-    const data = await res.json();
+    const data = await response.json();
 
     if (data.error) {
-      console.error("[Haiku Error]", data.error.message);
-      return [];
+      console.error("[API Error]", data.error.message);
+      return res.status(500).json({ error: data.error.message });
     }
 
     const text = data.content
       .filter((b) => b.type === "text")
       .map((b) => b.text)
-      .join("")
+      .join(" ")
       .trim();
 
-    const cleaned = text.replace(/```json\s*/g, "").replace(/```/g, "").trim();
-    const variations = JSON.parse(cleaned);
-
-    if (Array.isArray(variations)) {
-      console.log("[Haiku] Variations:", variations);
-      return variations;
-    }
-    return [];
+    res.json({ result: text || "No answer returned. Try rephrasing your query." });
   } catch (err) {
-    console.error("[Haiku] Failed:", err.message);
-    return [];
+    console.error("[Server Error]", err);
+    res.status(500).json({ error: "Failed to reach the AI service. Please try again." });
   }
-}
-
-// ── Combined search ─────────────────────────────────────────────────────────
-
-async function smartSearch(query, limit = 8) {
-  // Run local expansion immediately, Haiku in parallel
-  const localVariations = localExpand(query);
-  const haikuVariations = await haikuExpand(query);
-
-  // Haiku first (smarter), then local fallbacks
-  const allVariations = [...new Set([...haikuVariations, ...localVariations])];
-  console.log("[Search] Total variations:", allVariations.length, allVariations);
-
-  const seen = new Set();
-  const allResults = [];
-
-  for (const v of allVariations) {
-    if (allResults.length >= limit) break;
-
-    try {
-      const results = await imslpSearch(v, 4);
-      for (const r of results) {
-        if (!seen.has(r.title)) {
-          seen.add(r.title);
-          allResults.push(r);
-        }
-      }
-    } catch (err) {
-      console.error("[Search] Variation failed:", v, "-", err.message);
-    }
-  }
-
-  console.log("[Search] Total results:", allResults.length);
-  return allResults.slice(0, limit);
-}
-
-// ── Routes ───────────────────────────────────────────────────────────────────
+});
 
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", hasApiKey: !!API_KEY, version: "2.1" });
-});
-
-app.get("/api/search", async (req, res) => {
-  const q = (req.query.q || "").trim();
-  if (!q) return res.json({ results: [] });
-
-  try {
-    const results = await smartSearch(q);
-    res.json({ results });
-  } catch (err) {
-    console.error("[/api/search]", err);
-    res.status(500).json({ error: "Failed to search IMSLP. Please try again." });
-  }
-});
-
-app.get("/api/copyright", async (req, res) => {
-  const q = (req.query.q || "").trim();
-  if (!q) return res.json({ results: [] });
-
-  try {
-    const searchResults = await smartSearch(q, 5);
-
-    if (searchResults.length === 0) {
-      return res.json({
-        results: [],
-        message: `No results found on IMSLP for "${q}". Try "Composer Last Name + Work Title" (e.g. "Beethoven Piano Sonata No. 27").`,
-      });
-    }
-
-    const results = [];
-    for (const item of searchResults.slice(0, 3)) {
-      try {
-        const wikitext = await imslpGetPage(item.title);
-        const { statuses, composerDates } = parseCopyrightFromWikitext(wikitext);
-        const analysis = analyzeCopyright(statuses, composerDates);
-        results.push({ title: item.title, link: item.link, verdict: analysis.verdict, details: analysis.details });
-      } catch (parseErr) {
-        results.push({ title: item.title, link: item.link, verdict: "UNKNOWN", details: ["Could not retrieve details. Visit the IMSLP page directly."] });
-      }
-    }
-
-    res.json({ results });
-  } catch (err) {
-    console.error("[/api/copyright]", err);
-    res.status(500).json({ error: "Failed to check copyright. Please try again." });
-  }
+  res.json({ status: "ok", hasApiKey: !!API_KEY, version: "3.0-haiku" });
 });
 
 app.listen(PORT, () => {
-  console.log(`Score Lookup v2.1 running at http://localhost:${PORT}`);
-  console.log(`Anthropic API key configured: ${!!API_KEY}`);
+  console.log(`Score Lookup v3 running at http://localhost:${PORT}`);
+  console.log(`API key configured: ${!!API_KEY}`);
 });
