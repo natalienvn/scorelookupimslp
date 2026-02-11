@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Score Lookup · IMSLP</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    min-height: 100vh;
+    background: linear-gradient(168deg, #faf6f0 0%, #f0ebe2 50%, #e8e0d4 100%);
+    font-family: 'Source Serif 4', Georgia, serif;
+    color: #2c2417;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 60px 20px;
+  }
+
+  .header { text-align: center; margin-bottom: 52px; }
+
+  .badge {
+    display: inline-block;
+    padding: 6px 16px;
+    background: #2c2417;
+    color: #f0ebe2;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    border-radius: 4px;
+    margin-bottom: 20px;
+  }
+
+  h1 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 42px;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin-bottom: 12px;
+  }
+
+  .header p {
+    font-size: 17px;
+    color: #8b7355;
+    max-width: 460px;
+    margin: 0 auto;
+    line-height: 1.55;
+  }
+
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #c4b8a5, transparent);
+    margin-bottom: 44px;
+  }
+
+  .section { margin-bottom: 48px; }
+
+  .section h2 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 26px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    letter-spacing: -0.01em;
+  }
+
+  .subtitle {
+    font-size: 15px;
+    color: #8b7355;
+    font-style: italic;
+    margin-bottom: 18px;
+  }
+
+  .input-row { display: flex; gap: 10px; }
+
+  .input-row input {
+    flex: 1;
+    padding: 13px 18px;
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 16px;
+    border: 1.5px solid #d4c9b8;
+    border-radius: 8px;
+    background: #fffefa;
+    color: #2c2417;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .input-row input:focus { border-color: #8b7355; }
+  .input-row input::placeholder { color: #b8a990; }
+
+  .input-row button {
+    padding: 13px 28px;
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 15px;
+    font-weight: 600;
+    background: #2c2417;
+    color: #fffefa;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  .input-row button:hover { background: #3d3226; }
+  .input-row button:active { transform: scale(0.97); }
+  .input-row button:disabled { background: #d4c9b8; cursor: default; }
+
+  .loader {
+    display: none;
+    gap: 6px;
+    padding: 18px 0 6px;
+  }
+
+  .loader.active { display: flex; }
+
+  .loader span {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #8b7355;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+
+  .loader span:nth-child(2) { animation-delay: 0.15s; }
+  .loader span:nth-child(3) { animation-delay: 0.3s; }
+
+  @keyframes pulse {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1.1); }
+  }
+
+  .result {
+    display: none;
+    margin-top: 16px;
+    padding: 18px 22px;
+    background: #f7f3ec;
+    border-left: 3px solid #8b7355;
+    border-radius: 6px;
+    font-size: 15.5px;
+    line-height: 1.65;
+    color: #3a3025;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .result.active { display: block; }
+
+  .result.error {
+    background: #fdf0ef;
+    border-left-color: #cc4455;
+    color: #8b3030;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .footer {
+    margin-top: 24px;
+    text-align: center;
+    font-size: 13px;
+    color: #b8a990;
+  }
+
+  @media (max-width: 500px) {
+    h1 { font-size: 30px; }
+    .container { padding: 40px 16px; }
+    .input-row { flex-direction: column; }
+    .input-row button { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <div class="badge">IMSLP · Petrucci Music Library</div>
+    <h1>Score Lookup</h1>
+    <p>Check the copyright status of a musical work and whether it's available on IMSLP.</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- PUBLIC DOMAIN -->
+  <div class="section">
+    <h2>Is this public domain?</h2>
+    <p class="subtitle">Enter a composer, work, or edition to check its copyright status</p>
+    <div class="input-row">
+      <input type="text" id="pd-input" placeholder='e.g. "Debussy Clair de Lune" or "Ravel Bolero"'>
+      <button id="pd-btn">Check</button>
+    </div>
+    <div class="loader" id="pd-loader"><span></span><span></span><span></span></div>
+    <div class="result" id="pd-result"></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- IMSLP -->
+  <div class="section">
+    <h2>Is this on IMSLP?</h2>
+    <p class="subtitle">Search for scores, parts, and recordings on the Petrucci Music Library</p>
+    <div class="input-row">
+      <input type="text" id="imslp-input" placeholder='e.g. "Brahms Symphony No. 4" or "Ysaÿe Solo Sonatas"'>
+      <button id="imslp-btn">Check</button>
+    </div>
+    <div class="loader" id="imslp-loader"><span></span><span></span><span></span></div>
+    <div class="result" id="imslp-result"></div>
+  </div>
+
+  <div class="footer">Powered by AI · Results are informational, not legal advice</div>
+</div>
+
+<script>
+async function handleCheck(mode) {
+  const input = document.getElementById(mode + "-input");
+  const btn = document.getElementById(mode + "-btn");
+  const loader = document.getElementById(mode + "-loader");
+  const resultDiv = document.getElementById(mode + "-result");
+
+  const query = input.value.trim();
+  if (!query) return;
+
+  // UI: loading state
+  btn.disabled = true;
+  btn.textContent = "Checking…";
+  loader.classList.add("active");
+  resultDiv.classList.remove("active", "error");
+  resultDiv.textContent = "";
+
+  try {
+    const res = await fetch("/api/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, mode }),
+    });
+
+    const data = await res.json();
+
+    if (data.error) {
+      resultDiv.textContent = data.error;
+      resultDiv.classList.add("active", "error");
+    } else {
+      resultDiv.textContent = data.result;
+      resultDiv.classList.add("active");
+    }
+  } catch (err) {
+    resultDiv.textContent = "Something went wrong. Please try again.";
+    resultDiv.classList.add("active", "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Check";
+    loader.classList.remove("active");
+  }
+}
+
+// Wire up buttons and Enter keys
+document.getElementById("pd-btn").addEventListener("click", () => handleCheck("pd"));
+document.getElementById("imslp-btn").addEventListener("click", () => handleCheck("imslp"));
+document.getElementById("pd-input").addEventListener("keydown", (e) => { if (e.key === "Enter") handleCheck("pd"); });
+document.getElementById("imslp-input").addEventListener("keydown", (e) => { if (e.key === "Enter") handleCheck("imslp"); });
+</script>
+
+</body>
+</html>
