@@ -8,7 +8,7 @@ const API_KEY = process.env.ANTHROPIC_API_KEY;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ── IMSLP MediaWiki API helpers ─────────────────────────────────────────────
+// ── IMSLP MediaWiki API ─────────────────────────────────────────────────────
 
 const IMSLP_API = "https://imslp.org/w/api.php";
 
@@ -18,18 +18,30 @@ async function imslpSearch(query, limit = 5) {
   url.searchParams.set("list", "search");
   url.searchParams.set("srsearch", query);
   url.searchParams.set("srlimit", String(limit));
-  url.searchParams.set("srnamespace", "0");
   url.searchParams.set("format", "json");
 
+  console.log("[IMSLP Search]", query);
+
   const res = await fetch(url.toString(), {
-    headers: { "User-Agent": "ScoreLookup/2.0 (IMSLP checker)" },
+    headers: {
+      "User-Agent": "ScoreLookup/2.1 (IMSLP public domain checker)",
+      "Accept": "application/json",
+    },
   });
 
-  if (!res.ok) throw new Error(`IMSLP API returned ${res.status}`);
+  if (!res.ok) {
+    console.error("[IMSLP Error]", res.status, res.statusText);
+    throw new Error(`IMSLP API returned ${res.status}`);
+  }
+
   const data = await res.json();
   return (data.query?.search || []).map((item) => ({
     title: item.title,
-    snippet: item.snippet.replace(/<[^>]*>/g, "").replace(/&quot;/g, '"').replace(/&amp;/g, "&"),
+    snippet: item.snippet
+      .replace(/<[^>]*>/g, "")
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, "&")
+      .replace(/&#039;/g, "'"),
     link: `https://imslp.org/wiki/${encodeURIComponent(item.title.replace(/ /g, "_"))}`,
   }));
 }
@@ -42,7 +54,10 @@ async function imslpGetPage(title) {
   url.searchParams.set("format", "json");
 
   const res = await fetch(url.toString(), {
-    headers: { "User-Agent": "ScoreLookup/2.0 (IMSLP checker)" },
+    headers: {
+      "User-Agent": "ScoreLookup/2.1 (IMSLP public domain checker)",
+      "Accept": "application/json",
+    },
   });
 
   if (!res.ok) return null;
@@ -50,12 +65,11 @@ async function imslpGetPage(title) {
   return data.parse?.wikitext?.["*"] || null;
 }
 
-// ── Copyright parsing from IMSLP wikitext ───────────────────────────────────
+// ── Copyright parsing ───────────────────────────────────────────────────────
 
 function parseCopyrightFromWikitext(wikitext) {
   if (!wikitext) return { statuses: [], composerDates: null };
 
-  // Extract copyright tags
   const statuses = [];
   const copyrightMatches = wikitext.match(/\|Copyright\s*=\s*([^\n|}]+)/gi);
   if (copyrightMatches) {
@@ -65,7 +79,6 @@ function parseCopyrightFromWikitext(wikitext) {
     }
   }
 
-  // Extract composer dates
   let composerDates = null;
   const deathMatch = wikitext.match(/\|Death\s*=\s*(\d{4})/i);
   const birthMatch = wikitext.match(/\|Born\s*=\s*(\d{4})/i);
@@ -75,7 +88,6 @@ function parseCopyrightFromWikitext(wikitext) {
       death: parseInt(deathMatch[1]),
     };
   }
-  // Also try (YYYY-YYYY) pattern
   if (!composerDates) {
     const dateMatch = wikitext.match(/\((\d{4})\s*[-–]\s*(\d{4})\)/);
     if (dateMatch) {
@@ -91,7 +103,6 @@ function analyzeCopyright(statuses, composerDates) {
   const details = [];
   let verdict = "UNKNOWN";
 
-  // Check IMSLP copyright tags
   const hasPD = statuses.some((s) => /public\s*domain/i.test(s));
   const hasNonPD = statuses.some((s) => /non.*public\s*domain|copyrighted/i.test(s));
   const hasCC = statuses.some((s) => /creative\s*commons/i.test(s));
@@ -101,16 +112,15 @@ function analyzeCopyright(statuses, composerDates) {
     details.push("Tagged as Public Domain on IMSLP.");
   } else if (hasPD && hasNonPD) {
     verdict = "PARTIALLY";
-    details.push("Some editions are Public Domain on IMSLP, while others remain under copyright.");
+    details.push("Some editions are Public Domain, others remain under copyright.");
   } else if (hasCC) {
     verdict = "OPEN LICENSE";
-    details.push("Available under a Creative Commons license on IMSLP.");
+    details.push("Available under a Creative Commons license.");
   } else if (hasNonPD) {
     verdict = "NO";
     details.push("Tagged as copyrighted on IMSLP.");
   }
 
-  // Composer death date analysis
   if (composerDates && composerDates.death) {
     const yearsSinceDeath = currentYear - composerDates.death;
     const dates = composerDates.birth
@@ -121,7 +131,7 @@ function analyzeCopyright(statuses, composerDates) {
       details.push(`Composer ${dates} died over 70 years ago — original works are public domain in most countries.`);
       if (verdict === "UNKNOWN") verdict = "LIKELY YES";
     } else if (yearsSinceDeath > 50) {
-      details.push(`Composer ${dates} died ${yearsSinceDeath} years ago — PD in life+50 countries (Canada) but NOT in life+70 countries (US, EU).`);
+      details.push(`Composer ${dates} died ${yearsSinceDeath} years ago — PD in life+50 countries but NOT in life+70 countries (US, EU).`);
       if (verdict === "UNKNOWN") verdict = "DEPENDS ON COUNTRY";
     } else {
       details.push(`Composer ${dates} died only ${yearsSinceDeath} years ago — likely still under copyright.`);
@@ -130,20 +140,77 @@ function analyzeCopyright(statuses, composerDates) {
   }
 
   if (verdict === "UNKNOWN") {
-    details.push("Could not determine copyright status from IMSLP data. Check the page directly.");
+    details.push("Could not determine copyright status. Check the IMSLP page directly.");
   }
 
-  details.push("Note: Specific editions and arrangements may have their own separate copyright.");
-
+  details.push("Note: Specific editions and arrangements may have separate copyright.");
   return { verdict, details };
 }
 
-// ── Tiny Haiku call to expand search variations ─────────────────────────────
+// ── Local query expansion (free, always works) ──────────────────────────────
 
-async function generateSearchVariations(userQuery) {
-  if (!API_KEY) return [userQuery];
+function localExpand(query) {
+  const q = query.trim();
+  const variations = new Set();
+  variations.add(q);
+
+  // Normalize "op." / "opus" — e.g. "Beethoven op. 90" → "Beethoven Op. 90"
+  if (/\bop\.?\s*\d/i.test(q)) {
+    variations.add(q.replace(/\bop\.?\s*/i, "Op. "));
+    variations.add(q.replace(/\bop\.?\s*/i, "Opus "));
+  }
+
+  // Normalize "no."
+  if (/\bno\.?\s*\d/i.test(q)) {
+    variations.add(q.replace(/\bno\.?\s*/i, "No. "));
+    variations.add(q.replace(/\bno\.?\s*/i, "No."));
+  }
+
+  // Try just the composer name (first word if multi-word)
+  const words = q.split(/\s+/);
+  if (words.length >= 2) {
+    variations.add(words[0]);
+  }
+
+  // Try swapping number formats: "6 sonata" → "Sonata No. 6"
+  const numMatch = q.match(/\b(\d+)\b/);
+  if (numMatch) {
+    const num = numMatch[1];
+    const types = ["Sonata", "Symphony", "Concerto", "Quartet", "Trio", "Suite",
+      "Prelude", "Etude", "Nocturne", "Ballade", "Waltz", "Mazurka", "Polonaise",
+      "Rhapsody", "Fantasia", "Fugue", "Overture", "Serenade", "Impromptu", "Scherzo"];
+
+    // Check if the query already contains a work type
+    const foundType = types.find((t) => q.toLowerCase().includes(t.toLowerCase()));
+    if (foundType) {
+      // "ysaye 6 sonata" → "Sonata No. 6 Ysaÿe"
+      const composerPart = q.replace(/\d+/g, "").replace(new RegExp(foundType, "i"), "").trim();
+      variations.add(`${foundType} No. ${num} ${composerPart}`);
+      variations.add(`${composerPart} ${foundType} No. ${num}`);
+      variations.add(`${composerPart} ${foundType}`);
+    } else {
+      // No work type found — try common ones
+      const composer = words.find((w) => !/^\d+$/.test(w)) || words[0];
+      variations.add(`${composer} Sonata No. ${num}`);
+      variations.add(`${composer} Symphony No. ${num}`);
+      variations.add(`${composer} Concerto No. ${num}`);
+    }
+  }
+
+  return [...variations];
+}
+
+// ── Haiku call for smart expansion ──────────────────────────────────────────
+
+async function haikuExpand(userQuery) {
+  if (!API_KEY) {
+    console.log("[Haiku] No API key — skipping");
+    return [];
+  }
 
   try {
+    console.log("[Haiku] Expanding:", userQuery);
+
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -153,25 +220,21 @@ async function generateSearchVariations(userQuery) {
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 300,
-        system: `You generate search variations for IMSLP (music score library). Given a user query, output a JSON array of 5-8 search strings that might match the work on IMSLP. Include:
-- Full formal title (e.g. "Sonata No. 6" not just "6 sonata")
-- Composer last name + work title variations  
-- The original language title if applicable
-- Common catalog numbers (Op., BWV, K., etc.) if you know them
-- The query as-is
+        max_tokens: 250,
+        system: `Generate IMSLP search queries. IMSLP titles look like: "Piano Sonata No.27 (Beethoven, Ludwig van)" or "Boléro, M.81 (Ravel, Maurice)".
 
-ONLY output a valid JSON array of strings, nothing else. No markdown, no explanation.
-Example input: "ysaye 6 sonata"
-Example output: ["Ysaÿe Sonata No. 6", "Six Sonatas for Solo Violin (Ysaÿe, Eugène)", "Ysaÿe Op. 27 No. 6", "Sonata No. 6 Ysaÿe", "ysaye 6 sonata"]`,
+Given user input, return a JSON array of 5 search strings. Include the formal IMSLP-style title, opus/catalog numbers, and the composer's full name in "Last, First" format.
+
+ONLY output a JSON array. No markdown, no backticks, no explanation.`,
         messages: [{ role: "user", content: userQuery }],
       }),
     });
 
     const data = await res.json();
+
     if (data.error) {
-      console.error("Haiku error:", data.error.message);
-      return [userQuery];
+      console.error("[Haiku Error]", data.error.message);
+      return [];
     }
 
     const text = data.content
@@ -180,123 +243,107 @@ Example output: ["Ysaÿe Sonata No. 6", "Six Sonatas for Solo Violin (Ysaÿe, Eu
       .join("")
       .trim();
 
-    // Parse JSON array
     const cleaned = text.replace(/```json\s*/g, "").replace(/```/g, "").trim();
     const variations = JSON.parse(cleaned);
-    if (Array.isArray(variations) && variations.length > 0) {
+
+    if (Array.isArray(variations)) {
+      console.log("[Haiku] Variations:", variations);
       return variations;
     }
-    return [userQuery];
+    return [];
   } catch (err) {
-    console.error("Variation generation failed:", err.message);
-    return [userQuery];
+    console.error("[Haiku] Failed:", err.message);
+    return [];
   }
+}
+
+// ── Combined search ─────────────────────────────────────────────────────────
+
+async function smartSearch(query, limit = 8) {
+  // Run local expansion immediately, Haiku in parallel
+  const localVariations = localExpand(query);
+  const haikuVariations = await haikuExpand(query);
+
+  // Haiku first (smarter), then local fallbacks
+  const allVariations = [...new Set([...haikuVariations, ...localVariations])];
+  console.log("[Search] Total variations:", allVariations.length, allVariations);
+
+  const seen = new Set();
+  const allResults = [];
+
+  for (const v of allVariations) {
+    if (allResults.length >= limit) break;
+
+    try {
+      const results = await imslpSearch(v, 4);
+      for (const r of results) {
+        if (!seen.has(r.title)) {
+          seen.add(r.title);
+          allResults.push(r);
+        }
+      }
+    } catch (err) {
+      console.error("[Search] Variation failed:", v, "-", err.message);
+    }
+  }
+
+  console.log("[Search] Total results:", allResults.length);
+  return allResults.slice(0, limit);
 }
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 
-// IMSLP search with smart variations
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", hasApiKey: !!API_KEY, version: "2.1" });
+});
+
 app.get("/api/search", async (req, res) => {
   const q = (req.query.q || "").trim();
   if (!q) return res.json({ results: [] });
 
   try {
-    // Step 1: Generate smart search variations via tiny Haiku call
-    const variations = await generateSearchVariations(q);
-
-    // Step 2: Search IMSLP with each variation, collect unique results
-    const seen = new Set();
-    const allResults = [];
-
-    for (const v of variations) {
-      try {
-        const results = await imslpSearch(v, 3);
-        for (const r of results) {
-          if (!seen.has(r.title)) {
-            seen.add(r.title);
-            allResults.push(r);
-          }
-        }
-      } catch (searchErr) {
-        // Individual search failed, continue with others
-      }
-      if (allResults.length >= 8) break;
-    }
-
-    res.json({
-      results: allResults.slice(0, 8),
-      variations: variations,
-    });
+    const results = await smartSearch(q);
+    res.json({ results });
   } catch (err) {
-    console.error("Search error:", err);
+    console.error("[/api/search]", err);
     res.status(500).json({ error: "Failed to search IMSLP. Please try again." });
   }
 });
 
-// Copyright check: variations → IMSLP search → parse pages
 app.get("/api/copyright", async (req, res) => {
   const q = (req.query.q || "").trim();
   if (!q) return res.json({ results: [] });
 
   try {
-    // Step 1: Generate variations
-    const variations = await generateSearchVariations(q);
-
-    // Step 2: Search IMSLP
-    const seen = new Set();
-    const searchResults = [];
-
-    for (const v of variations) {
-      try {
-        const results = await imslpSearch(v, 3);
-        for (const r of results) {
-          if (!seen.has(r.title)) {
-            seen.add(r.title);
-            searchResults.push(r);
-          }
-        }
-      } catch (searchErr) {}
-      if (searchResults.length >= 5) break;
-    }
+    const searchResults = await smartSearch(q, 5);
 
     if (searchResults.length === 0) {
       return res.json({
         results: [],
-        message: `No results found on IMSLP for "${q}". Try different search terms (e.g. composer last name + work title).`,
+        message: `No results found on IMSLP for "${q}". Try "Composer Last Name + Work Title" (e.g. "Beethoven Piano Sonata No. 27").`,
       });
     }
 
-    // Step 3: Fetch page content and parse copyright for top results
     const results = [];
     for (const item of searchResults.slice(0, 3)) {
       try {
         const wikitext = await imslpGetPage(item.title);
         const { statuses, composerDates } = parseCopyrightFromWikitext(wikitext);
         const analysis = analyzeCopyright(statuses, composerDates);
-
-        results.push({
-          title: item.title,
-          link: item.link,
-          verdict: analysis.verdict,
-          details: analysis.details,
-        });
+        results.push({ title: item.title, link: item.link, verdict: analysis.verdict, details: analysis.details });
       } catch (parseErr) {
-        results.push({
-          title: item.title,
-          link: item.link,
-          verdict: "UNKNOWN",
-          details: ["Could not retrieve details. Visit the IMSLP page directly."],
-        });
+        results.push({ title: item.title, link: item.link, verdict: "UNKNOWN", details: ["Could not retrieve details. Visit the IMSLP page directly."] });
       }
     }
 
     res.json({ results });
   } catch (err) {
-    console.error("Copyright check error:", err);
+    console.error("[/api/copyright]", err);
     res.status(500).json({ error: "Failed to check copyright. Please try again." });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Score Lookup running at http://localhost:${PORT}`);
+  console.log(`Score Lookup v2.1 running at http://localhost:${PORT}`);
+  console.log(`Anthropic API key configured: ${!!API_KEY}`);
 });
