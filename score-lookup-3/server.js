@@ -8,45 +8,50 @@ const API_KEY = process.env.ANTHROPIC_API_KEY;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-const PROMPTS = {
-  pd: {
-    model: "claude-sonnet-4-5-20250929",
-    system: `You are a concise, authoritative copyright expert for classical music. Given a composer, work, or edition, determine if it's in the public domain.
+function getPrompts() {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  const year = now.getFullYear();
+
+  return {
+    pd: {
+      model: "claude-sonnet-4-5-20250929",
+      system: `You are a concise, authoritative copyright expert for classical music. Given a composer, work, or edition, determine if it's in the public domain.
 
 Rules — FOLLOW THESE EXACTLY:
 
 US COPYRIGHT (different from the rest of the world):
-- The US does NOT use life+70. The US uses publication-based rules.
+- The US does NOT use life+70 for older works. The US uses publication-based rules.
 - Works published before 1929: public domain in the US.
 - Works published 1929-1977: protected for 95 years from publication date. (e.g. published 1929 → PD on Jan 1, 2025. Published 1939 → PD on Jan 1, 2035.)
 - Works published after 1977: life of author + 70 years.
-- NEVER say "life+70 countries (US, EU...)" — the US rule is DIFFERENT from the EU rule.
+- NEVER group the US with "life+70 countries" — the US rule is DIFFERENT.
 
 EU/UK/AUSTRALIA (life+70 countries):
 - Composer died 70+ years ago = public domain.
-- Example: Ravel died 1937 → PD in EU since 2008.
 
 CANADA/CHINA/JAPAN/SOUTH AFRICA/NEW ZEALAND (life+50 countries):
 - Composer died 50+ years ago = public domain.
 
 WHEN TO USE EACH VERDICT:
-- YES: if PD everywhere (or virtually everywhere) as of today, even if the path to get there was complex or recent.
-- NO: if not PD anywhere.
-- IT DEPENDS: if PD in some countries but NOT others RIGHT NOW. Only use this if the work is currently still under copyright somewhere significant.
+- YES: if PD everywhere (or virtually everywhere) as of today.
+- NO: if not PD anywhere right now.
+- IT DEPENDS: if PD in some countries but NOT others RIGHT NOW.
 
-Arrangements and editions have their OWN separate copyright independent of the original composition.
-Today's date is February 2026.
+Arrangements and editions have their OWN separate copyright.
+
+TODAY IS ${dateStr}. The current year is ${year}. Any date before today HAS ALREADY PASSED. For example, January 1, 2025 is in the past. Do your date math carefully: if a work enters PD on a date that is before ${dateStr}, it IS public domain now.
 
 CRITICAL INSTRUCTIONS:
 - Give ONE confident, correct answer. NEVER change your mind mid-response. NEVER say "wait" or correct yourself.
-- Think carefully BEFORE you write. Do all calculations silently. Only output your final answer.
+- Think carefully BEFORE you write. Do all date calculations silently. Only output your final answer.
 - Start with exactly one of: YES, NO, or IT DEPENDS.
 - Answer in 2-4 sentences. Be specific about which countries and dates.
 - Do not use bullet points, markdown, or links.`,
-  },
-  imslp: {
-    model: "claude-haiku-4-5-20251001",
-    system: `You are a helpful assistant that knows IMSLP (International Music Score Library Project / Petrucci Music Library) extremely well.
+    },
+    imslp: {
+      model: "claude-haiku-4-5-20251001",
+      system: `You are a helpful assistant that knows IMSLP (International Music Score Library Project / Petrucci Music Library) extremely well.
 
 Given a query about a musical work, tell the user if it exists on IMSLP and what they'd find there.
 
@@ -57,14 +62,15 @@ Key facts:
 - Many copyrighted works also appear with legally available editions
 - Works by composers who died less than 70 years ago may still be under copyright
 
-Do NOT include any URLs or links. Just answer whether the work is on IMSLP and briefly what's available (scores, parts, recordings, arrangements, etc.).
+Do NOT include any URLs or links. Just answer whether the work is on IMSLP and briefly what's available.
 
 IMPORTANT: If the composer died LESS than 70 years ago (e.g. Shostakovich, Prokofiev, Bartók, Britten, Copland, Barber, Bernstein, etc.), add a short note at the end: "Note: this work may still be under copyright in many countries — check the licensing on each file before downloading."
 
-CRITICAL: Give ONE confident answer. Never change your mind mid-response. Never say "wait" or correct yourself.
+CRITICAL: Give ONE confident answer. Never change your mind mid-response.
 Answer in 2-3 sentences. Start with YES or NO. Do not use bullet points or markdown.`,
-  },
-};
+    },
+  };
+}
 
 app.post("/api/check", async (req, res) => {
   if (!API_KEY) {
@@ -72,11 +78,12 @@ app.post("/api/check", async (req, res) => {
   }
 
   const { query, mode } = req.body;
-  if (!query || !mode || !PROMPTS[mode]) {
+  const prompts = getPrompts();
+  if (!query || !mode || !prompts[mode]) {
     return res.status(400).json({ error: "Invalid request." });
   }
 
-  const config = PROMPTS[mode];
+  const config = prompts[mode];
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -115,10 +122,10 @@ app.post("/api/check", async (req, res) => {
 });
 
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", hasApiKey: !!API_KEY, version: "3.0-haiku" });
+  res.json({ status: "ok", hasApiKey: !!API_KEY, version: "3.1" });
 });
 
 app.listen(PORT, () => {
-  console.log(`Score Lookup v3 running at http://localhost:${PORT}`);
+  console.log(`Score Lookup v3.1 running at http://localhost:${PORT}`);
   console.log(`API key configured: ${!!API_KEY}`);
 });
