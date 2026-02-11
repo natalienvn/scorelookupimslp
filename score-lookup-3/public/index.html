@@ -160,13 +160,16 @@
 </div>
 
 <script>
-// Turn URLs in text into clickable links (handles parentheses in IMSLP URLs)
-function linkify(text) {
-  return text.replace(/(https?:\/\/[^\s,]+?)(?=[,.]?(?:\s|$))/g, function(url) {
-    // Clean trailing punctuation but keep parentheses that are part of the URL
-    var clean = url.replace(/[.,;:!?]+$/, '');
-    return '<a href="' + clean + '" target="_blank">' + clean + '</a>';
-  });
+// Color-code YES/NO at the start of the response
+function formatResult(text) {
+  var safe = esc(text);
+  // Color YES green
+  safe = safe.replace(/^(YES[.,!]?)/i, '<span style="color:#245830;font-weight:700;font-size:17px">$1</span>');
+  // Color NO red
+  safe = safe.replace(/^(NO[.,!]?)/i, '<span style="color:#a8222a;font-weight:700;font-size:17px">$1</span>');
+  // Color IT DEPENDS orange
+  safe = safe.replace(/^(IT DEPENDS[.,!]?)/i, '<span style="color:#8a6d1b;font-weight:700;font-size:17px">$1</span>');
+  return safe;
 }
 
 function esc(str) {
@@ -200,7 +203,7 @@ function handleCheck(mode) {
         resultDiv.innerHTML = esc(data.error);
         resultDiv.classList.add("active", "error");
       } else {
-        resultDiv.innerHTML = linkify(esc(data.result));
+        resultDiv.innerHTML = formatResult(data.result);
         resultDiv.classList.add("active");
       }
     })
