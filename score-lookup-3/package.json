@@ -1,0 +1,12 @@
+{
+  "name": "score-lookup",
+  "version": "2.0.0",
+  "description": "Check if a musical work is public domain and on IMSLP — hybrid approach",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
